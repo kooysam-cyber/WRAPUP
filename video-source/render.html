@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>AX 2027 영상 렌더러</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700&family=Noto+Sans+KR:wght@400;700;900&display=swap">
+<style>
+body{margin:0;background:#0b0f14;display:grid;place-items:center;min-height:100vh;font:14px system-ui;color:#ccc}
+canvas{width:min(96vw,1280px);height:auto;background:#fff}
+#ui{margin:10px;display:flex;gap:10px;align-items:center}
+button{font:600 15px system-ui;padding:10px 18px}
+</style></head><body>
+<canvas id="cv" width="1280" height="720"></canvas>
+<div id="ui"><button id="rec">녹화 시작</button><button id="prev">미리보기</button><span id="st">준비</span></div>
+<script>
+const DUR=[4.95,6.96,6.83,6.35,5.28,5.37,7.53,8.88,4.16], GAP=.35, LEAD=.6, TAIL=1.4;
+const CAP=['2027년, AX는 도입이 아니라 확산의 싸움입니다.','기업의 88%가 이미 AI를 쓰지만, 전사로 확산한 곳은 3분의 1뿐입니다.','직원 네 명 중 세 명이 AI를 쓰는데, 회사 교육을 받은 사람은 39%입니다.','교육이 5시간을 넘으면, 정기 사용률이 67%에서 79%로 오릅니다.','그래서 하루짜리 프롬프트 워크숍은, 더 이상 차별점이 아닙니다.','우리는 워크숍이 아니라, 8주 업무 재설계 스프린트를 제안합니다.','직무별 실제 업무를 다시 짜고, 현업 코치가 함께하며, 비용의 20%를 성과에 겁니다.','2027년 로드맵은 네 단계입니다. 진단, 스프린트, 에이전트 파일럿, 그리고 전사 확산.','교육 시간이 아니라, 바뀐 업무로 증명하십시오.'];
+const START=[];{let t=LEAD;DUR.forEach(d=>{START.push(t);t+=d+GAP})}
+const TOTAL=START[8]+DUR[8]+TAIL;
+const cv=document.getElementById('cv'),g=cv.getContext('2d'),W=1280,H=720;
+const NAVY='#051C2C',BLUE='#2251FF',INK='#111',MUTE='#8A949E',LINE='#C9D0D8';
+const SANS='"Noto Sans KR",sans-serif',SERIF='"Noto Serif KR",serif';
+const cl=(x,a=0,b=1)=>Math.max(a,Math.min(b,x)), eo=x=>1-Math.pow(1-cl(x),3), eio=x=>{x=cl(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
+const back=x=>{x=cl(x);const c=1.7;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
+function pen(c=INK,w=3){g.strokeStyle=c;g.lineWidth=w;g.lineCap='round';g.lineJoin='round'}
+// draw a polyline partially (p in 0..1) — the pen line effect
+function poly(pts,p,c,w){pen(c,w);let L=0,seg=[];for(let i=1;i<pts.length;i++){const d=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);seg.push(d);L+=d}
+ let left=L*cl(p);g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length&&left>0;i++){const d=seg[i-1],f=Math.min(1,left/d);g.lineTo(pts[i-1][0]+(pts[i][0]-pts[i-1][0])*f,pts[i-1][1]+(pts[i][1]-pts[i-1][1])*f);left-=d}g.stroke()}
+function circ(x,y,r,p,c,w,a0=-Math.PI/2){pen(c,w);g.beginPath();g.arc(x,y,r,a0,a0+Math.PI*2*cl(p));g.stroke()}
+function rect(x,y,w,h,p,c,lw){poly([[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]],p,c,lw)}
+function txt(s,x,y,{size=48,font=SANS,weight=700,color=INK,align='left',a=1,dy=0,sc=1,track=0}={}){g.save();g.globalAlpha=cl(a);g.translate(x,y+dy);g.scale(sc,sc);g.font=`${weight} ${size}px ${font}`;g.fillStyle=color;g.textAlign=align;g.textBaseline='alphabetic';if(track&&'letterSpacing' in g)g.letterSpacing=track+'px';g.fillText(s,0,0);g.restore()}
+// kinetic: each character drops in with stagger
+function kin(s,x,y,t,o={}){const st=o.stagger||.035;g.save();g.font=`${o.weight||900} ${o.size||80}px ${o.font||SANS}`;let w=g.measureText(s).width;let cx=o.align==='center'?x-w/2:x;g.restore();
+ [...s].forEach((ch,i)=>{g.save();g.font=`${o.weight||900} ${o.size||80}px ${o.font||SANS}`;const cw=g.measureText(ch).width;g.restore();const k=cl((t-i*st)/.45);
+  txt(ch,cx,y,{...o,align:'left',a:k,dy:(1-back(k))*(o.drop||40)});cx+=cw})}
+function wipe(x,y,w,h,p){g.save();g.beginPath();g.rect(x,y,w*cl(p),h);g.clip()}
+function person(x,y,s,p,c){circ(x,y-s*1.55,s*.32,cl(p*2),c,3);poly([[x-s*.62,y],[x-s*.62,y-s*.55],[x-s*.3,y-s*1.1],[x+s*.3,y-s*1.1],[x+s*.62,y-s*.55],[x+s*.62,y]],cl(p*2-.6),c,3)}
+function scene(i,t){ // t: seconds since scene start (may be negative / beyond)
+ const d=DUR[i],u=t/d;
+ switch(i){
+ case 0:{poly([[140,520],[1140,520]],eo(t/1.2),LINE,2);
+  kin('2027',W/2,330,t,{size:190,align:'center',font:SERIF,color:NAVY,stagger:.09});
+  const k=eo((t-1.4)/.6);txt('도입',420,470,{size:46,color:MUTE,align:'center',a:k});poly([[500,455],[760,455]],eo((t-1.8)/.8),INK,3);poly([[740,440],[762,455],[740,470]],eo((t-2.5)/.3),INK,3);
+  txt('확산',860,470,{size:46,color:BLUE,align:'center',a:eo((t-2.6)/.5),sc:.8+.2*back((t-2.6)/.5)});
+  // rising line art arrow
+  poly([[180,500],[300,470],[420,480],[560,420],[700,430],[860,330],[1060,240]],eo((t-.4)/3.6),BLUE,2.5);break}
+ case 1:{const n=Math.round(88*eo(t/1.6));txt(n+'%',360,400,{size:200,font:SERIF,color:NAVY,align:'center'});txt('AI 도입',360,470,{size:34,color:MUTE,align:'center',a:eo(t/1)});
+  rect(250,520,220,40,eo(t/1.5),INK,2.5);g.fillStyle=NAVY;g.fillRect(250,520,220*.88*eo((t-.6)/1.4),40);
+  const k=(t-3.2);txt('1/3',900,400,{size:200,font:SERIF,color:BLUE,align:'center',a:eo(k/.4),sc:.6+.4*back(k/.6)});txt('전사 확산',900,470,{size:34,color:BLUE,align:'center',a:eo((k-.3)/.5)});
+  rect(790,520,220,40,eo(k/1.2),INK,2.5);g.fillStyle=BLUE;g.fillRect(790,520,220*.33*eo((k-.4)/1),40);
+  txt('−55%p',W/2,380,{size:40,color:'#C8102E',align:'center',a:eo((t-5)/.5)});break}
+ case 2:{for(let j=0;j<4;j++){const x=330+j*130;person(x,470,90,eo((t-j*.25)/1.2),j<3?NAVY:LINE)}
+  txt('4명 중 3명이 사용',525,560,{size:34,color:NAVY,align:'center',a:eo((t-1.2)/.6)});
+  const k=t-3;circ(1000,360,120,eo(k/1.6)*.39,BLUE,16);circ(1000,360,120,eo(k/1.2),LINE,2);
+  txt(Math.round(39*eo(k/1.6))+'%',1000,385,{size:84,font:SERIF,color:BLUE,align:'center',a:eo(k/.4)});txt('회사 교육 받음',1000,540,{size:30,color:INK,align:'center',a:eo((k-.6)/.5)});break}
+ case 3:{const cx=360,cy=360,r=150;circ(cx,cy,r,eo(t/1.2),INK,4);for(let h=0;h<12;h++){const a=h/12*Math.PI*2-Math.PI/2,k=eo((t-.6-h*.05)/.3);poly([[cx+Math.cos(a)*(r-18),cy+Math.sin(a)*(r-18)],[cx+Math.cos(a)*(r-6),cy+Math.sin(a)*(r-6)]],k,INK,3)}
+  const sw=eio((t-1.4)/1.8)*5/12*Math.PI*2;pen(BLUE,10);g.beginPath();g.arc(cx,cy,r-34,-Math.PI/2,-Math.PI/2+sw);g.stroke();poly([[cx,cy],[cx+Math.cos(sw-Math.PI/2)*(r-50),cy+Math.sin(sw-Math.PI/2)*(r-50)]],eo((t-1)/.4),NAVY,5);
+  kin('5시간',cx,cy+r+80,t-2.6,{size:52,align:'center',color:BLUE});
+  const k=t-3.4,v=Math.round(67+12*eio((k-.6)/1.4));txt(v+'%',900,380,{size:170,font:SERIF,color:v>=79?BLUE:NAVY,align:'center',a:eo(k/.4)});txt('정기 사용률',900,450,{size:32,color:MUTE,align:'center',a:eo(k/.5)});
+  txt('67% → 79%',900,520,{size:30,color:INK,align:'center',a:eo((k-1.8)/.5)});break}
+ case 4:{txt('1-DAY',W/2,300,{size:120,font:SERIF,color:MUTE,align:'center',a:eo(t/.5),track:6});txt('PROMPT WORKSHOP',W/2,400,{size:64,color:MUTE,align:'center',a:eo((t-.3)/.5),track:4});
+  for(let j=0;j<5;j++){rect(310+j*140,470,110,60,eo((t-.6-j*.12)/.6),LINE,2)} // copies everywhere
+  poly([[260,360],[1020,330]],eio((t-2.6)/.6),'#C8102E',7);txt('차별점 아님',W/2,620,{size:44,color:'#C8102E',align:'center',a:eo((t-3.1)/.5)});break}
+ case 5:{const y=420;poly([[150,y],[1130,y]],eo(t/1.6),INK,3);for(let j=0;j<8;j++){const x=150+j*140,k=eo((t-.4-j*.18)/.4);circ(x,y,16,k,BLUE,4);txt((j+1)+'주',x,y+60,{size:24,color:MUTE,align:'center',a:k})}
+  kin('8주 업무 재설계',W/2,250,t-1.4,{size:84,align:'center',color:NAVY,stagger:.05});txt('SPRINT',W/2,330,{size:40,color:BLUE,align:'center',a:eo((t-2.4)/.5),track:14});break}
+ case 6:{const items=[['직무별 업무 재설계',.2],['현업 코치 동행',2.4],['비용 20% 성과 연동',4.6]];
+  items.forEach(([s,b],j)=>{const x=230+j*410,k=t-b;
+   if(j===0){rect(x-70,250,140,170,eo(k/1),INK,3);for(let q=0;q<4;q++)poly([[x-45,290+q*32],[x+45,290+q*32]],eo((k-.6-q*.1)/.3),BLUE,3)}
+   if(j===1){person(x-40,420,80,eo(k/1.2),NAVY);person(x+50,420,64,eo((k-.3)/1.2),BLUE)}
+   if(j===2){circ(x,335,85,eo(k/1),INK,3);circ(x,335,85,eo((k-.5)/1)*.2,BLUE,14);txt('20%',x,352,{size:48,font:SERIF,color:BLUE,align:'center',a:eo((k-.6)/.4)})}
+   txt(s,x,500,{size:32,color:NAVY,align:'center',a:eo((k-.5)/.5),dy:(1-eo((k-.5)/.5))*20})});break}
+ case 7:{const labs=['진단','스프린트','에이전트 파일럿','전사 확산'],bs=[1.6,2.6,3.6,5.1];let pts=[[160,560]];for(let j=0;j<4;j++){const x=160+j*250;pts.push([x,560-j*90-90],[x+250,560-j*90-90])}
+  poly(pts,eo(t/2.8),INK,3);txt('2027',140,180,{size:64,font:SERIF,color:NAVY,a:eo(t/.5)});
+  labs.forEach((s,j)=>{const k=t-bs[j],x=285+j*250,y=560-j*90-110;txt('Q'+(j+1),x,y-44,{size:24,color:BLUE,align:'center',a:eo(k/.4)});txt(s,x,y,{size:34,color:NAVY,align:'center',a:eo(k/.4),dy:(1-back(k/.5))*24})});break}
+ case 8:{kin('교육 시간이 아니라,',W/2,320,t,{size:64,align:'center',color:MUTE,weight:700,stagger:.03});kin('바뀐 업무로 증명하라',W/2,430,t-.8,{size:92,align:'center',color:NAVY,font:SERIF,stagger:.05});
+  poly([[300,470],[980,470]],eio((t-2)/.9),BLUE,6);txt('AX 2027 실행 로드맵',W/2,600,{size:24,color:MUTE,align:'center',a:eo((t-3)/.6),track:4});break}
+ }}
+function frame(T){g.fillStyle='#fff';g.fillRect(0,0,W,H);
+ // frame chrome: hairline and section counter, consulting-deck style
+ pen(LINE,1);g.beginPath();g.moveTo(60,70);g.lineTo(W-60,70);g.stroke();txt('AX 2027 · AI WORKSHOP STRATEGY',60,52,{size:16,color:MUTE,weight:700,track:3});
+ let cur=-1;for(let i=0;i<9;i++)if(T>=START[i]-.15)cur=i;
+ if(cur>=0){const out=T-(START[cur]+DUR[cur]); const fade=cur<8?1-eo((out-GAP+.25)/.25):1;g.save();g.globalAlpha=cl(fade);scene(cur,T-START[cur]);g.restore();
+  txt(String(cur+1).padStart(2,'0')+' / 09',W-60,52,{size:16,color:BLUE,weight:700,align:'right'});
+  // caption
+  const ca=cl(eo((T-START[cur])/.3)*fade);g.save();g.globalAlpha=ca;g.font=`500 26px ${SANS}`;const cw=g.measureText(CAP[cur]).width;g.fillStyle='rgba(5,28,44,.9)';g.fillRect(W/2-cw/2-18,H-82,cw+36,46);g.fillStyle='#fff';g.textAlign='center';g.fillText(CAP[cur],W/2,H-50);g.restore()}
+ g.fillStyle=BLUE;g.fillRect(0,H-4,W*cl(T/TOTAL),4)}
+let ctx,bufs,st=document.getElementById('st');
+async function load(){ctx=new AudioContext();bufs=await Promise.all(DUR.map((_,i)=>fetch('n'+i+'.wav').then(r=>r.arrayBuffer()).then(b=>ctx.decodeAudioData(b))));await document.fonts.ready;await document.fonts.load('900 80px "Noto Sans KR"');await document.fonts.load('700 80px "Noto Serif KR"')}
+async function run(record){await ctx.resume();const dest=ctx.createMediaStreamDestination();const t0=ctx.currentTime+.3;
+ bufs.forEach((b,i)=>{const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.connect(dest);s.start(t0+START[i])});
+ let rec,chunks=[];if(record){const stream=new MediaStream([...cv.captureStream(30).getVideoTracks(),...dest.stream.getAudioTracks()]);
+  const mt=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m));rec=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:6e6});rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.start(1000);window.MIME=mt}
+ window.STATE='running';
+ return new Promise(res=>{function loop(){const T=ctx.currentTime-t0;frame(Math.max(0,T));st.textContent=(record?'녹화 중 ':'재생 ')+Math.max(0,T).toFixed(1)+' / '+TOTAL.toFixed(1)+'s';
+  if(T<TOTAL)requestAnimationFrame(loop);else{if(rec){rec.onstop=async()=>{const blob=new Blob(chunks,{type:'video/webm'});st.textContent='저장 중 '+(blob.size/1e6).toFixed(1)+'MB';const r=await fetch('/save',{method:'POST',body:blob});window.STATE='saved '+r.status+' '+blob.size;st.textContent='저장 완료';res()};rec.stop()}else{window.STATE='done';res()}}}loop()})}
+const ready=load().then(()=>{st.textContent='준비 완료 · 총 '+TOTAL.toFixed(1)+'초';window.STATE='ready';frame(0)});
+document.getElementById('rec').onclick=()=>ready.then(()=>run(true));
+document.getElementById('prev').onclick=()=>ready.then(()=>run(false));
+window.seek=T=>frame(T);
+</script></body></html>
